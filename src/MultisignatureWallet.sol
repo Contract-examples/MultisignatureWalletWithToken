@@ -7,8 +7,10 @@ import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 contract MultisignatureWallet {
     using SafeERC20 for IERC20;
 
-    // multisignature wallet signers
-    address[] public signers;
+    // signers mapping
+    mapping(address => bool) public isSigner;
+    // signer count
+    uint256 public signerCount;
     // required approvals
     uint256 public immutable requiredApprovals;
     // token
@@ -35,11 +37,15 @@ contract MultisignatureWallet {
     error ProposalAlreadyExecuted();
     error InsufficientApprovals();
     error InsufficientBalance();
+    error NotSigner();
+    error CannotRemoveSigner();
 
     event Deposit(address indexed user, uint256 amount);
     event ProposalCreated(uint256 indexed proposalId, address to, uint256 amount);
     event ProposalApproved(uint256 indexed proposalId, address signer);
     event ProposalExecuted(uint256 indexed proposalId, address to, uint256 amount);
+    event SignerAdded(address signer);
+    event SignerRemoved(address signer);
 
     constructor(address _token, address[] memory _signers, uint256 _requiredApprovals) {
         if (_signers.length == 0 || _requiredApprovals == 0 || _requiredApprovals > _signers.length) {
@@ -47,20 +53,17 @@ contract MultisignatureWallet {
         }
 
         token = IERC20(_token);
-        signers = _signers;
+        for (uint256 i = 0; i < _signers.length; i++) {
+            isSigner[_signers[i]] = true;
+            emit SignerAdded(_signers[i]);
+        }
+        signerCount = _signers.length;
         requiredApprovals = _requiredApprovals;
     }
 
     modifier onlySigner() {
-        if (!isSigner(msg.sender)) revert Unauthorized();
+        if (!isSigner[msg.sender]) revert Unauthorized();
         _;
-    }
-
-    function isSigner(address account) public view returns (bool) {
-        for (uint256 i = 0; i < signers.length; i++) {
-            if (account == signers[i]) return true;
-        }
-        return false;
     }
 
     function createProposal(address to, uint256 amount) external onlySigner {
@@ -103,5 +106,23 @@ contract MultisignatureWallet {
         balance += amount;
 
         emit Deposit(msg.sender, amount);
+    }
+
+    // add signer
+    function addSigner(address newSigner) external onlySigner {
+        if (!isSigner[newSigner]) {
+            isSigner[newSigner] = true;
+            signerCount++;
+            emit SignerAdded(newSigner);
+        }
+    }
+
+    // remove signer
+    function removeSigner(address signerToRemove) external onlySigner {
+        if (!isSigner[signerToRemove]) revert NotSigner();
+        if (signerCount <= requiredApprovals) revert CannotRemoveSigner();
+        isSigner[signerToRemove] = false;
+        signerCount--;
+        emit SignerRemoved(signerToRemove);
     }
 }
