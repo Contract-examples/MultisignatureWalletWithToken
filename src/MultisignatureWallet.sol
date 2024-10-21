@@ -3,17 +3,18 @@ pragma solidity ^0.8.28;
 
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
-import "@openzeppelin/contracts/access/Ownable.sol";
-import "@openzeppelin/contracts/utils/Address.sol";
 
-contract MultisignatureWallet is Ownable {
+contract MultisignatureWallet {
     using SafeERC20 for IERC20;
 
     // multisignature wallet signers
     address[] public signers;
-
     // required approvals
-    uint256 public requiredApprovals;
+    uint256 public immutable requiredApprovals;
+    // token
+    IERC20 public immutable token;
+    // balance
+    uint256 public balance;
 
     // proposal struct
     struct Proposal {
@@ -24,74 +25,57 @@ contract MultisignatureWallet is Ownable {
         bool executed;
     }
 
-    // proposal mapping
+    // proposals mapping
     mapping(uint256 => Proposal) public proposals;
-
     // proposal count
     uint256 public proposalCount;
 
-    // token
-    IERC20 public token;
-
-    // balance
-    uint256 public balances;
-
-    // error
-    error DepositTooLow();
-    error InsufficientBalance();
-    error NotSigner();
+    error Unauthorized();
+    error InvalidParameters();
     error ProposalAlreadyExecuted();
     error InsufficientApprovals();
-    error InvalidSigners();
-    error InvalidThreshold();
-    error AlreadyApproved();
+    error InsufficientBalance();
 
-    // event
     event Deposit(address indexed user, uint256 amount);
-    event Withdraw(address indexed user, uint256 amount);
     event ProposalCreated(uint256 indexed proposalId, address to, uint256 amount);
     event ProposalApproved(uint256 indexed proposalId, address signer);
-    event ProposalExecuted(uint256 indexed proposalId);
+    event ProposalExecuted(uint256 indexed proposalId, address to, uint256 amount);
 
-    constructor(address _token, address[] memory _signers, uint256 _requiredApprovals) Ownable(msg.sender) {
-        if (_signers.length == 0) revert InvalidSigners();
-        if (_requiredApprovals == 0 || _requiredApprovals > _signers.length) revert InvalidThreshold();
+    constructor(address _token, address[] memory _signers, uint256 _requiredApprovals) {
+        if (_signers.length == 0 || _requiredApprovals == 0 || _requiredApprovals > _signers.length) {
+            revert InvalidParameters();
+        }
 
         token = IERC20(_token);
         signers = _signers;
         requiredApprovals = _requiredApprovals;
     }
 
-    // check if the sender is a signer
     modifier onlySigner() {
-        bool isSigner = false;
-        for (uint256 i = 0; i < signers.length; i++) {
-            if (msg.sender == signers[i]) {
-                isSigner = true;
-                break;
-            }
-        }
-        if (!isSigner) revert NotSigner();
+        if (!isSigner(msg.sender)) revert Unauthorized();
         _;
     }
 
-    // create proposal
+    function isSigner(address account) public view returns (bool) {
+        for (uint256 i = 0; i < signers.length; i++) {
+            if (account == signers[i]) return true;
+        }
+        return false;
+    }
+
     function createProposal(address to, uint256 amount) external onlySigner {
         uint256 proposalId = proposalCount++;
         Proposal storage proposal = proposals[proposalId];
         proposal.to = to;
         proposal.amount = amount;
-        proposal.approvals = 0;
-        proposal.executed = false;
 
         emit ProposalCreated(proposalId, to, amount);
     }
 
-    // approve proposal
     function approveProposal(uint256 proposalId) external onlySigner {
         Proposal storage proposal = proposals[proposalId];
         if (proposal.executed) revert ProposalAlreadyExecuted();
-        if (proposal.hasApproved[msg.sender]) revert AlreadyApproved();
+        if (proposal.hasApproved[msg.sender]) return;
 
         proposal.approvals++;
         proposal.hasApproved[msg.sender] = true;
@@ -99,37 +83,25 @@ contract MultisignatureWallet is Ownable {
         emit ProposalApproved(proposalId, msg.sender);
     }
 
-    // execute proposal
     function executeProposal(uint256 proposalId) external {
         Proposal storage proposal = proposals[proposalId];
         if (proposal.executed) revert ProposalAlreadyExecuted();
         if (proposal.approvals < requiredApprovals) revert InsufficientApprovals();
-        if (proposal.amount > balances) revert InsufficientBalance();
+        if (proposal.amount > balance) revert InsufficientBalance();
 
         proposal.executed = true;
-        balances -= proposal.amount;
+        balance -= proposal.amount;
         token.safeTransfer(proposal.to, proposal.amount);
 
-        // emit proposal executed event
-        emit ProposalExecuted(proposalId);
-
-        // emit withdraw event
-        emit Withdraw(proposal.to, proposal.amount);
+        emit ProposalExecuted(proposalId, proposal.to, proposal.amount);
     }
 
-    function deposit(uint256 amount) public {
-        // if amount is 0, revert
-        if (amount == 0) {
-            revert DepositTooLow();
-        }
+    function deposit(uint256 amount) external {
+        if (amount == 0) revert InvalidParameters();
 
-        // transfer token from user to contract (safe transfer)
-        token.safeTransferFrom(_msgSender(), address(this), amount);
+        token.safeTransferFrom(msg.sender, address(this), amount);
+        balance += amount;
 
-        // update balance
-        balances += amount;
-
-        // emit event
-        emit Deposit(_msgSender(), amount);
+        emit Deposit(msg.sender, amount);
     }
 }
