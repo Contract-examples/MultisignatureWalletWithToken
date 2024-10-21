@@ -48,11 +48,13 @@ contract MultisignatureWallet {
     event SignerRemoved(address signer);
 
     constructor(address _token, address[] memory _signers, uint256 _requiredApprovals) {
+        // check if parameters are valid
         if (_signers.length == 0 || _requiredApprovals == 0 || _requiredApprovals > _signers.length) {
             revert InvalidParameters();
         }
 
         token = IERC20(_token);
+
         for (uint256 i = 0; i < _signers.length; i++) {
             isSigner[_signers[i]] = true;
             emit SignerAdded(_signers[i]);
@@ -66,6 +68,7 @@ contract MultisignatureWallet {
         _;
     }
 
+    // create proposalq
     function createProposal(address to, uint256 amount) external onlySigner {
         uint256 proposalId = proposalCount++;
         Proposal storage proposal = proposals[proposalId];
@@ -75,6 +78,7 @@ contract MultisignatureWallet {
         emit ProposalCreated(proposalId, to, amount);
     }
 
+    // approve proposal
     function approveProposal(uint256 proposalId) external onlySigner {
         Proposal storage proposal = proposals[proposalId];
         if (proposal.executed) revert ProposalAlreadyExecuted();
@@ -86,6 +90,7 @@ contract MultisignatureWallet {
         emit ProposalApproved(proposalId, msg.sender);
     }
 
+    // execute proposal
     function executeProposal(uint256 proposalId) external {
         Proposal storage proposal = proposals[proposalId];
         if (proposal.executed) revert ProposalAlreadyExecuted();
@@ -93,12 +98,13 @@ contract MultisignatureWallet {
         if (proposal.amount > balance) revert InsufficientBalance();
 
         proposal.executed = true;
-        balance -= proposal.amount;
         token.safeTransfer(proposal.to, proposal.amount);
+        balance -= proposal.amount;
 
         emit ProposalExecuted(proposalId, proposal.to, proposal.amount);
     }
 
+    // deposit
     function deposit(uint256 amount) external {
         if (amount == 0) revert InvalidParameters();
 
