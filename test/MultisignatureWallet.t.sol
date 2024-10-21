@@ -7,24 +7,134 @@ import "../src/MultisignatureWallet.sol";
 import "../src/MyERC20Token.sol";
 
 contract MultisignatureWalletTest is Test {
-    //   AdminTokenBank public bank;
+    MultisignatureWallet public wallet;
     MyERC20Token public token;
-    address public owner;
-    address public admin;
-    address public user;
+    address[] public signers;
+    uint256 public constant REQUIRED_APPROVALS = 2;
+
+    address public user1;
+    address public user2;
+    address public user3;
+    address public nonSigner;
 
     function setUp() public {
-        token = new MyERC20Token("MyNFTToken", "MTK");
-        owner = address(this);
-        admin = address(0x3389);
-        user = address(0x1);
-        // bank = new AdminTokenBank(admin, address(token));
+        token = new MyERC20Token("TestToken", "TT");
+        
+        user1 = address(0x1);
+        user2 = address(0x2);
+        user3 = address(0x3);
+        nonSigner = address(0x4);
 
-        // give user 1000 tokens
-        token.mint(user, 10_000 * 10 ** 18);
+        signers = [user1, user2, user3];
+        wallet = new MultisignatureWallet(address(token), signers, REQUIRED_APPROVALS);
+
+        // mint tokens to each signer
+        token.mint(user1, 1000 * 10**18);
+        token.mint(user2, 1000 * 10**18);
+        token.mint(user3, 1000 * 10**18);
     }
 
-    function test_add_signer() public {
-      
+    function testConstructor() public view{
+        assertEq(wallet.signerCount(), 3);
+        assertEq(wallet.requiredApprovals(), REQUIRED_APPROVALS);
+        assertTrue(wallet.isSigner(user1));
+        assertTrue(wallet.isSigner(user2));
+        assertTrue(wallet.isSigner(user3));
+        assertFalse(wallet.isSigner(nonSigner));
+    }
+
+    function testDeposit() public {
+        uint256 amount = 100 * 10**18;
+        vm.startPrank(user1);
+        token.approve(address(wallet), amount);
+        wallet.deposit(amount);
+        vm.stopPrank();
+
+        assertEq(wallet.balance(), amount);
+        assertEq(token.balanceOf(address(wallet)), amount);
+    }
+
+    function testCreateProposal() public {
+        vm.prank(user1);
+        wallet.createProposal(nonSigner, 50 * 10**18);
+
+        (address to, uint256 amount, uint256 approvals, bool executed) = wallet.proposals(0);
+        assertEq(to, nonSigner);
+        assertEq(amount, 50 * 10**18);
+        assertEq(approvals, 0);
+        assertFalse(executed);
+    }
+
+    function testApproveProposal() public {
+        vm.prank(user1);
+        wallet.createProposal(nonSigner, 50 * 10**18);
+
+        vm.prank(user2);
+        wallet.approveProposal(0);
+
+        (,, uint256 approvals,) = wallet.proposals(0);
+        assertEq(approvals, 1);
+    }
+
+    function testExecuteProposal() public {
+        uint256 amount = 100 * 10**18;
+        vm.startPrank(user1);
+        token.approve(address(wallet), amount);
+        wallet.deposit(amount);
+        wallet.createProposal(nonSigner, 50 * 10**18);
+        wallet.approveProposal(0);
+        vm.stopPrank();
+
+        vm.prank(user2);
+        wallet.approveProposal(0);
+
+        wallet.executeProposalAndTransfer(0);
+
+        (,,, bool executed) = wallet.proposals(0);
+        assertTrue(executed);
+        assertEq(token.balanceOf(nonSigner), 50 * 10**18);
+        assertEq(wallet.balance(), 50 * 10**18);
+    }
+
+    function testAddSigner() public {
+        vm.prank(user1);
+        wallet.addSigner(nonSigner);
+
+        assertTrue(wallet.isSigner(nonSigner));
+        assertEq(wallet.signerCount(), 4);
+    }
+
+    function testRemoveSigner() public {
+        vm.prank(user1);
+        wallet.removeSigner(user3);
+
+        assertFalse(wallet.isSigner(user3));
+        assertEq(wallet.signerCount(), 2);
+    }
+
+    function testFailNonSignerCreateProposal() public {
+        vm.prank(nonSigner);
+        wallet.createProposal(nonSigner, 50 * 10**18);
+    }
+
+    function testFailInsufficientBalance() public {
+        vm.prank(user1);
+        wallet.createProposal(nonSigner, 50 * 10**18);
+
+        vm.prank(user2);
+        wallet.approveProposal(0);
+
+        vm.prank(user3);
+        wallet.approveProposal(0);
+
+        wallet.executeProposalAndTransfer(0);
+    }
+
+    function testFailRemoveSignerBelowRequired() public {
+        vm.prank(user1);
+        wallet.removeSigner(user3);
+
+        vm.prank(user2);
+        wallet.removeSigner(user2);
     }
 }
