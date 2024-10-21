@@ -90,8 +90,8 @@ contract MultisignatureWallet {
         emit ProposalApproved(proposalId, msg.sender);
     }
 
-    // execute proposal
-    function executeProposal(uint256 proposalId) external {
+    // execute proposal and transfer
+    function executeProposalAndTransfer(uint256 proposalId) external {
         Proposal storage proposal = proposals[proposalId];
         if (proposal.executed) revert ProposalAlreadyExecuted();
         if (proposal.approvals < requiredApprovals) revert InsufficientApprovals();
