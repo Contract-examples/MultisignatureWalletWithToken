@@ -234,5 +234,7 @@ contract MultisignatureWalletTest is Test {
         wallet.approveProposal(1);
 
         wallet.executeProposal(1);
+
+        // TODO: test revert
     }
 }
