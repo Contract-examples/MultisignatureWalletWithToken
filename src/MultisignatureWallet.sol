@@ -18,6 +18,13 @@ contract MultisignatureWallet {
     // balance
     uint256 public balance;
 
+    // proposal type
+    enum ProposalType {
+        Transfer,
+        AddSigner,
+        RemoveSigner
+    }
+
     // proposal struct
     struct Proposal {
         address to;
@@ -25,6 +32,8 @@ contract MultisignatureWallet {
         uint256 approvals;
         mapping(address => bool) hasApproved;
         bool executed;
+        ProposalType proposalType;
+        address signerToAddOrRemove; // used for add or remove signer
     }
 
     // proposals mapping
@@ -41,9 +50,13 @@ contract MultisignatureWallet {
     error CannotRemoveSigner();
 
     event Deposit(address indexed user, uint256 amount);
-    event ProposalCreated(uint256 indexed proposalId, address to, uint256 amount);
+    event ProposalCreated(
+        uint256 indexed proposalId, address to, uint256 amount, ProposalType proposalType, address signerToAddOrRemove
+    );
     event ProposalApproved(uint256 indexed proposalId, address signer);
-    event ProposalExecuted(uint256 indexed proposalId, address to, uint256 amount);
+    event ProposalExecuted(
+        uint256 indexed proposalId, address to, uint256 amount, ProposalType proposalType, address signerToAddOrRemove
+    );
     event SignerAdded(address signer);
     event SignerRemoved(address signer);
 
@@ -68,14 +81,26 @@ contract MultisignatureWallet {
         _;
     }
 
-    // create proposalq
-    function createProposal(address to, uint256 amount) external onlySigner {
+    // create proposal
+    function createProposal(
+        address to,
+        uint256 amount,
+        ProposalType proposalType,
+        address signerToAddOrRemove
+    )
+        external
+        onlySigner
+    {
         uint256 proposalId = proposalCount++;
         Proposal storage proposal = proposals[proposalId];
         proposal.to = to;
         proposal.amount = amount;
+        // set proposal type
+        proposal.proposalType = proposalType;
+        // set signer to add or remove
+        proposal.signerToAddOrRemove = signerToAddOrRemove;
 
-        emit ProposalCreated(proposalId, to, amount);
+        emit ProposalCreated(proposalId, to, amount, proposalType, signerToAddOrRemove);
     }
 
     // approve proposal
@@ -84,24 +109,48 @@ contract MultisignatureWallet {
         if (proposal.executed) revert ProposalAlreadyExecuted();
         if (proposal.hasApproved[msg.sender]) return;
 
+        // increase approvals
         proposal.approvals++;
+        // set approved
         proposal.hasApproved[msg.sender] = true;
 
         emit ProposalApproved(proposalId, msg.sender);
     }
 
-    // execute proposal and transfer
-    function executeProposalAndTransfer(uint256 proposalId) external {
+    // execute proposal
+    function executeProposal(uint256 proposalId) external {
         Proposal storage proposal = proposals[proposalId];
         if (proposal.executed) revert ProposalAlreadyExecuted();
         if (proposal.approvals < requiredApprovals) revert InsufficientApprovals();
-        if (proposal.amount > balance) revert InsufficientBalance();
 
+        // set executed
         proposal.executed = true;
-        token.safeTransfer(proposal.to, proposal.amount);
-        balance -= proposal.amount;
 
-        emit ProposalExecuted(proposalId, proposal.to, proposal.amount);
+        if (proposal.proposalType == ProposalType.Transfer) {
+            if (proposal.amount > balance) revert InsufficientBalance();
+            // transfer token to the address first
+            token.safeTransfer(proposal.to, proposal.amount);
+            // then update balance
+            balance -= proposal.amount;
+            emit ProposalExecuted(proposalId, proposal.to, proposal.amount, ProposalType.Transfer, address(0));
+        } else if (proposal.proposalType == ProposalType.AddSigner) {
+            // add signer
+            if (!isSigner[proposal.signerToAddOrRemove]) {
+                isSigner[proposal.signerToAddOrRemove] = true;
+                signerCount++;
+                emit SignerAdded(proposal.signerToAddOrRemove);
+            }
+            emit ProposalExecuted(proposalId, address(0), 0, ProposalType.AddSigner, proposal.signerToAddOrRemove);
+        } else if (proposal.proposalType == ProposalType.RemoveSigner) {
+            // remove signer
+            if (isSigner[proposal.signerToAddOrRemove]) {
+                if (signerCount <= requiredApprovals) revert CannotRemoveSigner();
+                isSigner[proposal.signerToAddOrRemove] = false;
+                signerCount--;
+                emit SignerRemoved(proposal.signerToAddOrRemove);
+            }
+            emit ProposalExecuted(proposalId, address(0), 0, ProposalType.RemoveSigner, proposal.signerToAddOrRemove);
+        }
     }
 
     // deposit
@@ -114,21 +163,8 @@ contract MultisignatureWallet {
         emit Deposit(msg.sender, amount);
     }
 
-    // add signer
-    function addSigner(address newSigner) external onlySigner {
-        if (!isSigner[newSigner]) {
-            isSigner[newSigner] = true;
-            signerCount++;
-            emit SignerAdded(newSigner);
-        }
-    }
-
-    // remove signer
-    function removeSigner(address signerToRemove) external onlySigner {
-        if (!isSigner[signerToRemove]) revert NotSigner();
-        if (signerCount <= requiredApprovals) revert CannotRemoveSigner();
-        isSigner[signerToRemove] = false;
-        signerCount--;
-        emit SignerRemoved(signerToRemove);
+    // check if a signer has approved a proposal
+    function hasApproved(uint256 proposalId, address signer) public view returns (bool) {
+        return proposals[proposalId].hasApproved[signer];
     }
 }
