@@ -1,4 +1,4 @@
-# Multisignature wallet contract
+# Multisignature wallet with token contract
 
 ## Address
 ```
