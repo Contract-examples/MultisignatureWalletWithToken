@@ -175,11 +175,13 @@ contract MultisignatureWalletTest is Test {
         assertEq(wallet.signerCount(), 2);
     }
 
+    // testFail will revert automatically
     function testFailNonSignerCreateProposal() public {
         vm.prank(nonSigner);
         wallet.createProposal(nonSigner, 50 * 10 ** 18, MultisignatureWallet.ProposalType.Transfer, address(0));
     }
 
+    // testFail will revert automatically
     function testFailInsufficientBalance() public {
         vm.prank(user1);
         wallet.createProposal(nonSigner, 50 * 10 ** 18, MultisignatureWallet.ProposalType.Transfer, address(0));
@@ -193,6 +195,7 @@ contract MultisignatureWalletTest is Test {
         wallet.executeProposal(0);
     }
 
+    // testFail will revert automatically
     function testFailAddSignerWithoutEnoughApprovals() public {
         vm.prank(user1);
         wallet.createProposal(address(0), 0, MultisignatureWallet.ProposalType.AddSigner, nonSigner);
@@ -203,6 +206,7 @@ contract MultisignatureWalletTest is Test {
         wallet.executeProposal(0);
     }
 
+    // testFail will revert automatically
     function testFailRemoveSignerWithoutEnoughApprovals() public {
         vm.prank(user1);
         wallet.createProposal(address(0), 0, MultisignatureWallet.ProposalType.RemoveSigner, user3);
@@ -213,6 +217,7 @@ contract MultisignatureWalletTest is Test {
         wallet.executeProposal(0);
     }
 
+    // testFail will revert automatically
     function testFailRemoveLastRequiredSigner() public {
         // First, remove one signer to reach the minimum required signers
         vm.prank(user1);
@@ -234,7 +239,5 @@ contract MultisignatureWalletTest is Test {
         wallet.approveProposal(1);
 
         wallet.executeProposal(1);
-
-        // TODO: test revert
     }
 }
