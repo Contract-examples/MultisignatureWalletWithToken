@@ -127,6 +127,22 @@ contract MultisignatureWalletTest is Test {
         assertEq(wallet.signerCount(), 4);
     }
 
+    function testAddSigner2() public {
+        vm.prank(user1);
+        wallet.createProposal(address(0), 0, MultisignatureWallet.ProposalType.AddSigner, nonSigner);
+
+        vm.prank(user2);
+        wallet.approveProposal(0);
+
+        vm.prank(user1);
+        wallet.approveProposal(0);
+
+        wallet.executeProposal(0);
+
+        assertTrue(wallet.isSigner(nonSigner));
+        assertEq(wallet.signerCount(), 4);
+    }
+
     function testRemoveSigner() public {
         vm.prank(user1);
         wallet.createProposal(address(0), 0, MultisignatureWallet.ProposalType.RemoveSigner, user3);
