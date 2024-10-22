@@ -153,6 +153,11 @@ contract MultisignatureWallet {
         }
     }
 
+    // check if a signer has approved a proposal
+    function hasApproved(uint256 proposalId, address signer) public view returns (bool) {
+        return proposals[proposalId].hasApproved[signer];
+    }
+
     // deposit
     function deposit(uint256 amount) external {
         if (amount == 0) revert InvalidParameters();
@@ -161,10 +166,5 @@ contract MultisignatureWallet {
         balance += amount;
 
         emit Deposit(msg.sender, amount);
-    }
-
-    // check if a signer has approved a proposal
-    function hasApproved(uint256 proposalId, address signer) public view returns (bool) {
-        return proposals[proposalId].hasApproved[signer];
     }
 }
