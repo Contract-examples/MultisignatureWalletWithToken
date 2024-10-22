@@ -59,6 +59,7 @@ contract MultisignatureWallet {
     );
     event SignerAdded(address signer);
     event SignerRemoved(address signer);
+    event SignerTransfer(address to, uint256 amount);
 
     constructor(address _token, address[] memory _signers, uint256 _requiredApprovals) {
         // check if parameters are valid
@@ -123,7 +124,6 @@ contract MultisignatureWallet {
         if (proposal.executed) revert ProposalAlreadyExecuted();
         if (proposal.approvals < requiredApprovals) revert InsufficientApprovals();
 
-        // set executed
         proposal.executed = true;
 
         if (proposal.proposalType == ProposalType.Transfer) {
@@ -132,25 +132,29 @@ contract MultisignatureWallet {
             token.safeTransfer(proposal.to, proposal.amount);
             // then update balance
             balance -= proposal.amount;
-            emit ProposalExecuted(proposalId, proposal.to, proposal.amount, ProposalType.Transfer, address(0));
+            // emit signer transfer
+            emit SignerTransfer(proposal.to, proposal.amount);
         } else if (proposal.proposalType == ProposalType.AddSigner) {
-            // add signer
             if (!isSigner[proposal.signerToAddOrRemove]) {
                 isSigner[proposal.signerToAddOrRemove] = true;
                 signerCount++;
+                // emit signer added
                 emit SignerAdded(proposal.signerToAddOrRemove);
             }
-            emit ProposalExecuted(proposalId, address(0), 0, ProposalType.AddSigner, proposal.signerToAddOrRemove);
         } else if (proposal.proposalType == ProposalType.RemoveSigner) {
-            // remove signer
             if (isSigner[proposal.signerToAddOrRemove]) {
                 if (signerCount <= requiredApprovals) revert CannotRemoveSigner();
                 isSigner[proposal.signerToAddOrRemove] = false;
                 signerCount--;
+                // emit signer removed
                 emit SignerRemoved(proposal.signerToAddOrRemove);
             }
-            emit ProposalExecuted(proposalId, address(0), 0, ProposalType.RemoveSigner, proposal.signerToAddOrRemove);
         }
+
+        // emit proposal executed
+        emit ProposalExecuted(
+            proposalId, proposal.to, proposal.amount, proposal.proposalType, proposal.signerToAddOrRemove
+        );
     }
 
     // check if a signer has approved a proposal
